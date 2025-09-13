@@ -344,10 +344,9 @@ def plot_equations_to_mdl_library(
             document_id=uploaded_doc.id
         )
         
-        # Read the temporary file and convert to base64
+        # Read the temporary file as PNG binary data
         with open(temp_path, "rb") as image_file:
-            image_data = image_file.read()
-            base64_image = base64.b64encode(image_data).decode('utf-8')
+            png_image_data = image_file.read()
         
         # Store file information
         file_info = {
@@ -376,9 +375,10 @@ def plot_equations_to_mdl_library(
             'summary': final_doc.summary,
             'title': title,
             'equation_ids': equation_ids,
-            'image_base64': base64_image,
+            'image_png': png_image_data,
             'image_format': 'png',
-            'message': f"Successfully uploaded plot to MSeeP_Plots library and retrieved image data"
+            'image_size': len(png_image_data),
+            'message': f"Successfully uploaded plot to MSeeP_Plots library and retrieved PNG image data"
         }
         
     except Exception as e:
@@ -425,7 +425,7 @@ def extract_equations(text: str) -> Dict[str, Any]:
 
 @mcp.tool(
     title="Plot Extracted Equations to MDL Library",
-    description="Plot one or more extracted mathematical equations, save as temporary PNG file, upload to MSeeP_Plots library, and retrieve the image data. Returns base64 encoded image data from the library."
+    description="Plot one or more extracted mathematical equations, save as temporary PNG file, upload to MSeeP_Plots library, and retrieve the PNG image data. Returns PNG binary image data from the library."
 )
 def plot_extracted_equations(
     equation_ids: List[str],
