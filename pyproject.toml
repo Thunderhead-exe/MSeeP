@@ -1,14 +1,22 @@
 [project]
-name = "mseep"
+name = "mseep-cursor"
 version = "0.1.0"
-description = "Add your description here"
+description = "Model Context Protocol server for mathematical equation plotting"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.116.1",
-    "fastmcp>=2.12.3",
-    "matplotlib>=3.10.6",
-    "mcp>=1.14.0",
-    "sympy>=1.14.0",
-    "uvicorn>=0.35.0",
+    "fastmcp>=0.1.0",
+    "sympy>=1.12",
+    "matplotlib>=3.8.0",
+    "numpy>=1.24.0",
+    "regex>=2023.0.0",
+    "pillow>=10.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0"
 ]
