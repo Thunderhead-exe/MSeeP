@@ -296,19 +296,10 @@ def plot_equations_to_ocr(
                 "type": "image_url",
                 "image_url": f"data:image/png;base64,{base64_image}"
             },
-            include_image_base64=True
+            include_image_base64=False
         )
         
-        # Extract image from OCR response
-        extracted_image = None
-        if ocr_response and hasattr(ocr_response, 'pages') and ocr_response.pages:
-            page = ocr_response.pages[0]
-            if hasattr(page, 'images') and page.images:
-                # Get the first image from OCR results
-                ocr_image = page.images[0]
-                # The OCR response should contain the image data
-                # We'll use the original image data since OCR extracts bounding boxes
-                extracted_image = base64_image
+        
         
         # Clean up temporary file
         os.unlink(temp_path)
@@ -320,7 +311,7 @@ def plot_equations_to_ocr(
             'x_range': x_range,
             'y_range': y_range,
             'ocr_results': ocr_response,
-            'extracted_image': extracted_image,
+            'extracted_image': ocr_response.pages[0].images[0],
             'image_format': 'png',
             'message': f"Successfully processed plot with Mistral OCR and extracted image"
         }
@@ -441,3 +432,7 @@ def clear_equations() -> Dict[str, Any]:
         'message': f'Cleared {count} equation(s) from memory'
     }
 
+
+if __name__ == "__main__":
+    # Run the MCP server
+    mcp.run(port=8000, stateless_http=True, debug=True)
