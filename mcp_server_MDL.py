@@ -19,7 +19,7 @@ import numpy as np
 from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Math Equation Plotter")
+mcp = FastMCP("Math Equation Plotter MDL")
 
 # Global storage for extracted equations (storing string expressions and SymPy objects)
 extracted_equations: Dict[str, Dict[str, Any]] = {}
@@ -614,3 +614,7 @@ def clear_uploaded_files_cache() -> Dict[str, Any]:
         "message": f"Cleared {count} uploaded file(s) from cache"
     }
 
+
+if __name__ == "__main__":
+    # Run the MCP server
+    mcp.run(port=3000, stateless_http=True, debug=True)
