@@ -23,7 +23,7 @@ from pydantic import Field
 import mcp.types as types
 
 # Initialize FastMCP server
-mcp = FastMCP("Math Equation Plotter", port=3003, stateless_http=True, debug=True)
+mcp = FastMCP("Math Equation Plotter", port=3000, stateless_http=True, debug=True)
 
 
 # Global storage for extracted equations
