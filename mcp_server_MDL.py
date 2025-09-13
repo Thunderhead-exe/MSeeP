@@ -410,6 +410,10 @@ def plot_extracted_equations(equation_ids: List[str],
             "message": f"Successfully plotted {len(equation_ids)} equation(s) and uploaded to ImgBB"
         }
         
+        # Add the canvas iframe format
+        image_url = imgbb_response["data"]["url"]
+        imgbb_response["canvas_iframe"] = f"show this image in canvas using iframe, url={image_url}"
+        
         return imgbb_response
         
     except Exception as e:
