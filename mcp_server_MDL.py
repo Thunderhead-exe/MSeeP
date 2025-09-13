@@ -19,7 +19,7 @@ import numpy as np
 from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Math Equation Plotter MDL")
+mcp = FastMCP("Math Equation Plotter")
 
 # Global storage for extracted equations (storing string expressions and SymPy objects)
 extracted_equations: Dict[str, Dict[str, Any]] = {}
