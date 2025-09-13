@@ -1,8 +1,9 @@
 """
-Model Context Protocol (MCP) Server for Mathematical Equation Plotting - Mistral Document Library Version
+Model Context Protocol (MCP) Server for Mathematical Equation Plotting - OCR Version
 
 This server provides tools for extracting symbolic equations from text
-and plotting them using the Mistral Document Library for file storage and retrieval.
+and plotting them using Mistral's OCR library to process the images.
+This version processes plots with OCR and returns the OCR results.
 """
 
 import os
@@ -10,8 +11,6 @@ import re
 import base64
 import io
 import tempfile
-import json
-from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 
 import sympy as sp
@@ -21,55 +20,31 @@ import numpy as np
 from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Math Equation Plotter MDL")
+mcp = FastMCP("Math Equation Plotter OCR")
 
 # Global storage for extracted equations (storing string expressions and SymPy objects)
 extracted_equations: Dict[str, Dict[str, Any]] = {}
 
-# Global storage for uploaded files and libraries
-uploaded_files: Dict[str, Dict[str, Any]] = {}
-math_library_id: str = None  # Store the math library ID
 
-
-def get_or_create_math_library() -> str:
+def encode_image(image_path: str) -> Optional[str]:
     """
-    Get or create a math library for storing equation plots.
+    Encode the image to base64.
     
+    Args:
+        image_path (str): Path to the image file
+        
     Returns:
-        str: The library ID
+        Optional[str]: Base64 encoded image string or None if error
     """
-    global math_library_id
-    
-    if math_library_id:
-        return math_library_id
-    
     try:
-        from mistralai import Mistral
-        from mistralai.models import File
-        
-        api_key = os.environ.get("MISTRAL_API_KEY")
-        if not api_key:
-            raise ValueError("MISTRAL_API_KEY environment variable not set")
-        
-        client = Mistral(api_key=api_key)
-        
-        # Try to find existing math library
-        libraries = client.beta.libraries.list()
-        for library in libraries.data:
-            if library.name == "Math Equation Plots":
-                math_library_id = library.id
-                return math_library_id
-        
-        # Create new library if not found
-        new_library = client.beta.libraries.create(
-            name="Math Equation Plots",
-            description="A library for storing mathematical equation plots and visualizations"
-        )
-        math_library_id = new_library.id
-        return math_library_id
-        
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+    except FileNotFoundError:
+        print(f"Error: The file {image_path} was not found.")
+        return None
     except Exception as e:
-        raise Exception(f"Failed to create/get math library: {str(e)}")
+        print(f"Error: {e}")
+        return None
 
 
 def extract_equations_from_text(text: str) -> List[Dict[str, Any]]:
@@ -95,65 +70,58 @@ def extract_equations_from_text(text: str) -> List[Dict[str, Any]]:
     patterns = [
         # Explicit equations: y = x^2, f(x) = sin(x), etc.
         r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(?([a-zA-Z_][a-zA-Z0-9_]*)?\)?\s*=\s*([^=\n]+)',
-        # Implicit equations: x^2 + y^2 = 1
+        # Implicit equations: x^2 + y^2 = 1, etc.
         r'([^=\n]+)\s*=\s*([^=\n]+)',
-        # Function definitions: f(x) = x^2
+        # Function definitions: f(x) = expression
         r'([a-zA-Z_][a-zA-Z0-9_]*)\s*\(\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\)\s*=\s*([^=\n]+)',
     ]
     
-    for i, pattern in enumerate(patterns):
+    for pattern in patterns:
         matches = re.finditer(pattern, text, re.IGNORECASE)
         for match in matches:
             try:
-                if i == 0:  # Explicit equations
+                if len(match.groups()) == 3:
+                    # Function or explicit equation
                     var_name, dep_var, expr_str = match.groups()
-                    if dep_var:  # Function form: f(x) = ...
-                        expr_str = match.group(3)
-                        var_name = match.group(1)
-                        dep_var = match.group(2)
-                    else:  # Simple form: y = ...
-                        expr_str = match.group(3)
-                        var_name = match.group(1)
+                    if dep_var:  # Function definition
+                        expr_str = f"{expr_str}"
+                        dep_var = dep_var.strip()
+                    else:  # Explicit equation
                         dep_var = None
-                elif i == 1:  # Implicit equations
+                else:
+                    # Implicit equation
                     left_expr, right_expr = match.groups()
-                    expr_str = f"({left_expr}) - ({right_expr})"
+                    expr_str = f"{left_expr} - ({right_expr})"
                     var_name = "implicit"
                     dep_var = None
-                else:  # Function definitions
-                    var_name, dep_var, expr_str = match.groups()
                 
-                # Clean and normalize the expression
-                expr_str = clean_expression(expr_str)
+                # Clean and parse expression
+                cleaned_expr = clean_expression(expr_str)
+                expr = sp.sympify(cleaned_expr)
                 
-                # Try to parse with SymPy
-                try:
-                    expr = sp.sympify(expr_str)
-                    equation_id = f"eq{len(equations) + 1}"
-                    
-                    equations.append({
-                        'id': equation_id,
-                        'name': var_name,
-                        'expression': str(expr),
-                        'dependent_var': dep_var,
-                        'type': 'function' if dep_var else 'explicit',
-                        'original_text': match.group(0)
-                    })
-                    
-                    # Store in global dictionary (both string and SymPy object)
-                    extracted_equations[equation_id] = {
-                        'expression': str(expr),
-                        'sympy_expr': expr,
-                        'latex': sp.latex(expr),
-                        'variables': [str(sym) for sym in expr.free_symbols]
-                    }
-                    
-                except Exception as e:
-                    print(f"Warning: Could not parse expression '{expr_str}': {e}")
-                    continue
-                    
+                # Generate equation ID
+                equation_id = f"eq{len(extracted_equations) + 1}"
+                
+                # Store in global dictionary
+                extracted_equations[equation_id] = {
+                    'expression': str(expr),
+                    'sympy_expr': expr,
+                    'latex': sp.latex(expr),
+                    'variables': [str(sym) for sym in expr.free_symbols]
+                }
+                
+                # Add to equations list
+                equations.append({
+                    'id': equation_id,
+                    'name': var_name,
+                    'expression': str(expr),
+                    'dependent_var': dep_var,
+                    'type': 'function' if dep_var else 'explicit',
+                    'original_text': match.group(0)
+                })
+                
             except Exception as e:
-                print(f"Warning: Error processing match '{match.group(0)}': {e}")
+                print(f"Warning: Could not parse expression '{match.group(0)}': {e}")
                 continue
     
     return equations
@@ -161,7 +129,7 @@ def extract_equations_from_text(text: str) -> List[Dict[str, Any]]:
 
 def clean_expression(expr_str: str) -> str:
     """
-    Clean and normalize mathematical expressions for SymPy parsing.
+    Clean mathematical expression string for SymPy parsing.
     
     Args:
         expr_str (str): Raw expression string
@@ -172,7 +140,7 @@ def clean_expression(expr_str: str) -> str:
     # Remove extra whitespace
     expr_str = re.sub(r'\s+', ' ', expr_str.strip())
     
-    # Convert common mathematical notation
+    # Handle common mathematical notation
     replacements = {
         r'\^': '**',  # Power operator
         r'²': '**2',  # Superscript 2
@@ -193,111 +161,102 @@ def clean_expression(expr_str: str) -> str:
     for pattern, replacement in replacements.items():
         expr_str = re.sub(pattern, replacement, expr_str, flags=re.IGNORECASE)
     
-    # Handle implicit multiplication (e.g., "2x" -> "2*x")
-    # But avoid adding * after function names
-    expr_str = re.sub(r'(\d+)([a-zA-Z_])', r'\1*\2', expr_str)
-    expr_str = re.sub(r'([a-zA-Z_]+)(\d+)', r'\1*\2', expr_str)
-    expr_str = re.sub(r'\)([a-zA-Z_])', r')*\1', expr_str)
-    
-    # Only add * before parentheses if it's not a function call
-    # This is tricky - we'll be more conservative and only handle obvious cases
-    # expr_str = re.sub(r'([a-zA-Z_])(\()', r'\1*\2', expr_str)  # Removed this line
+    # Handle implicit multiplication (but avoid function names)
+    # Only add * between numbers and variables, not after function names
+    expr_str = re.sub(r'(\d)([a-zA-Z_])', r'\1*\2', expr_str)
+    # Avoid adding * after function names like sin, cos, etc.
+    expr_str = re.sub(r'([a-zA-Z_]\w*)([a-zA-Z_]\w*)', r'\1*\2', expr_str)
+    # Fix common function parsing issues
+    expr_str = re.sub(r'si\*n', 'sin', expr_str)
+    expr_str = re.sub(r'co\*s', 'cos', expr_str)
+    expr_str = re.sub(r'ta\*n', 'tan', expr_str)
     
     return expr_str
 
 
-def plot_equations_to_mistral(equation_ids: List[str], 
-                             x_range: tuple = (-10, 10), 
-                             y_range: Optional[tuple] = None,
-                             resolution: int = 1000,
-                             title: str = "Mathematical Functions") -> Dict[str, Any]:
+def plot_equations_to_ocr(
+    equation_ids: List[str],
+    x_range: Optional[List[float]] = None,
+    y_range: Optional[List[float]] = None,
+    title: Optional[str] = None,
+    resolution: int = 1000
+) -> Dict[str, Any]:
     """
-    Plot one or more extracted equations and upload to Mistral Document Library.
+    Plot extracted equations, save to temporary PNG file, and process with Mistral OCR.
     
     Args:
         equation_ids (List[str]): List of equation IDs to plot
-        x_range (tuple): X-axis range (min, max)
-        y_range (Optional[tuple]): Y-axis range (min, max), auto if None
-        resolution (int): Number of points for plotting
-        title (str): Plot title
+        x_range (Optional[List[float]]): X-axis range [min, max]
+        y_range (Optional[List[float]]): Y-axis range [min, max] (for implicit equations)
+        title (Optional[str]): Plot title
+        resolution (int): Plot resolution
         
     Returns:
-        Dict[str, Any]: Upload result with file information
-        
-    Examples:
-        >>> plot_equations_to_mistral(['eq1'], x_range=(-5, 5))
-        {'success': True, 'file_id': 'file_123', 'file_name': 'plot.png', 'signed_url': 'https://...'}
+        Dict[str, Any]: Plot result with OCR processing results
     """
     if not equation_ids:
-        raise ValueError("No equation IDs provided")
+        return {
+            'success': False,
+            'error': 'No equation IDs provided',
+            'message': 'Please provide equation IDs to plot'
+        }
     
     # Validate equation IDs
     missing_ids = [eq_id for eq_id in equation_ids if eq_id not in extracted_equations]
     if missing_ids:
-        raise ValueError(f"Equations not found: {missing_ids}")
+        return {
+            'success': False,
+            'error': f'Equation IDs not found: {missing_ids}',
+            'message': 'Please extract equations first'
+        }
     
-    # Create figure
-    fig, ax = plt.subplots(figsize=(12, 8))
+    # Set default ranges
+    if x_range is None:
+        x_range = [-5, 5]
+    if y_range is None:
+        y_range = [-5, 5]
     
-    # Generate x values
-    x_min, x_max = x_range
-    x_vals = np.linspace(x_min, x_max, resolution)
+    # Create plot
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Color palette
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     
     # Plot each equation
-    colors = plt.cm.tab10(np.linspace(0, 1, len(equation_ids)))
-    
     for i, eq_id in enumerate(equation_ids):
-        expr = extracted_equations[eq_id]['sympy_expr']
+        expr_data = extracted_equations[eq_id]
+        expr = expr_data['sympy_expr']
+        symbols = list(expr.free_symbols)
         
-        try:
-            # Convert to numerical function
-            if hasattr(expr, 'free_symbols'):
-                symbols = list(expr.free_symbols)
-                if len(symbols) == 1:
-                    # Single variable function
-                    var = symbols[0]
-                    func = sp.lambdify(var, expr, 'numpy')
-                    y_vals = func(x_vals)
-                    
-                    # Handle complex results
-                    if np.iscomplexobj(y_vals):
-                        y_vals = np.real(y_vals)
-                    
-                    # Plot
-                    ax.plot(x_vals, y_vals, 
-                           color=colors[i], 
-                           linewidth=2, 
-                           label=f'{eq_id}: {sp.latex(expr)}')
-                    
-                elif len(symbols) == 2:
-                    # Implicit equation (contour plot)
-                    x_sym, y_sym = symbols[:2]
-                    y_min, y_max = y_range if y_range else x_range
-                    y_vals_2d = np.linspace(y_min, y_max, resolution)
-                    X, Y = np.meshgrid(x_vals, y_vals_2d)
-                    Z = sp.lambdify((x_sym, y_sym), expr, 'numpy')(X, Y)
-                    
-                    ax.contour(X, Y, Z, levels=[0], colors=[colors[i]], linewidths=2)
-                    ax.plot([], [], color=colors[i], linewidth=2, 
-                           label=f'{eq_id}: {sp.latex(expr)} = 0')
-                    
-        except Exception as e:
-            print(f"Warning: Could not plot equation {eq_id}: {e}")
-            continue
+        if len(symbols) == 1:
+            # Single variable function
+            x_sym = symbols[0]
+            x_vals = np.linspace(x_range[0], x_range[1], resolution)
+            y_vals = sp.lambdify(x_sym, expr, 'numpy')(x_vals)
+            ax.plot(x_vals, y_vals, color=colors[i % len(colors)], linewidth=2,
+                   label=f'{eq_id}: {sp.latex(expr)}')
+            
+        elif len(symbols) == 2:
+            # Implicit equation (contour plot)
+            x_sym, y_sym = symbols[:2]
+            x_vals = np.linspace(x_range[0], x_range[1], resolution)
+            y_min, y_max = y_range if y_range else x_range
+            y_vals_2d = np.linspace(y_min, y_max, resolution)
+            X, Y = np.meshgrid(x_vals, y_vals_2d)
+            Z = sp.lambdify((x_sym, y_sym), expr, 'numpy')(X, Y)
+            ax.contour(X, Y, Z, levels=[0], colors=[colors[i % len(colors)]], linewidths=2)
+            ax.plot([], [], color=colors[i % len(colors)], linewidth=2,
+                   label=f'{eq_id}: {sp.latex(expr)} = 0')
     
     # Customize plot
     ax.set_xlabel('x', fontsize=12)
     ax.set_ylabel('y', fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.set_title(title or 'Mathematical Equations Plot', fontsize=14, fontweight='bold')
+    ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
-    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    
-    # Set axis limits
     ax.set_xlim(x_range)
     if y_range:
         ax.set_ylim(y_range)
-    else:
-        ax.set_ylim(ax.get_ylim())  # Auto-scale
     
     # Add axis lines
     ax.axhline(y=0, color='k', linewidth=0.5)
@@ -306,187 +265,128 @@ def plot_equations_to_mistral(equation_ids: List[str],
     # Adjust layout
     plt.tight_layout()
     
-    # Save to temporary file
+    # Create temporary PNG file
     temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
     temp_path = temp_file.name
     temp_file.close()
     
+    # Save plot to temporary file
     plt.savefig(temp_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     try:
-        # Upload to Mistral Document Library
-        try:
-            from mistralai import Mistral
-        except ImportError:
-            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
+        # Initialize Mistral client
+        from mistralai import Mistral
         
-        # Check for API key
         api_key = os.environ.get("MISTRAL_API_KEY")
         if not api_key:
             raise ValueError("MISTRAL_API_KEY environment variable not set")
         
         client = Mistral(api_key=api_key)
         
-        # Generate filename
-        filename = f"math_plot_{len(uploaded_files) + 1}.png"
+        # Encode image to base64
+        base64_image = encode_image(temp_path)
+        if not base64_image:
+            raise ValueError("Failed to encode image to base64")
         
-        # Get or create math library
-        library_id = get_or_create_math_library()
-        
-        # Upload document to Mistral Document Library
-        from mistralai.models import File
-        with open(temp_path, "rb") as file_content:
-            uploaded_doc = client.beta.libraries.documents.upload(
-                library_id=library_id,
-                file=File(fileName=filename, content=file_content)
-            )
-        
-        # Wait for processing to complete
-        import time
-        status = client.beta.libraries.documents.status(
-            library_id=library_id, 
-            document_id=uploaded_doc.id
+        # Process with OCR
+        ocr_response = client.ocr.process(
+            model="mistral-ocr-latest",
+            document={
+                "type": "image_url",
+                "image_url": f"data:image/png;base64,{base64_image}"
+            },
+            include_image_base64=True
         )
         
-        while status.processing_status == "Running":
-            time.sleep(1)
-            status = client.beta.libraries.documents.status(
-                library_id=library_id, 
-                document_id=uploaded_doc.id
-            )
-        
-        # Get final document info
-        final_doc = client.beta.libraries.documents.get(
-            library_id=library_id, 
-            document_id=uploaded_doc.id
-        )
-        
-        # Store file information
-        file_info = {
-            'document_id': uploaded_doc.id,
-            'library_id': library_id,
-            'filename': filename,
-            'uploaded_at': datetime.now().isoformat(),
-            'equation_ids': equation_ids,
-            'title': title,
-            'x_range': x_range,
-            'y_range': y_range,
-            'processing_status': final_doc.processing_status,
-            'summary': final_doc.summary
-        }
-        uploaded_files[uploaded_doc.id] = file_info
+        # Clean up temporary file
+        os.unlink(temp_path)
         
         return {
             'success': True,
-            'document_id': uploaded_doc.id,
-            'library_id': library_id,
-            'filename': filename,
-            'processing_status': final_doc.processing_status,
-            'summary': final_doc.summary,
             'title': title,
             'equation_ids': equation_ids,
-            'message': f"Successfully uploaded plot to Mistral Document Library"
+            'x_range': x_range,
+            'y_range': y_range,
+            'ocr_results': ocr_response,
+            'image_base64': base64_image,
+            'message': f"Successfully processed plot with Mistral OCR"
         }
         
     except Exception as e:
+        # Clean up temporary file on error
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
         return {
             'success': False,
             'error': str(e),
-            'message': f"Failed to upload plot to Mistral Document Library"
+            'message': f"Failed to process plot with Mistral OCR"
         }
-    finally:
-        # Clean up temporary file
-        if os.path.exists(temp_path):
-            os.unlink(temp_path)
 
 
-# MCP Tool Definitions
+# MCP Tools
 @mcp.tool(
     title="Extract Mathematical Equations",
     description="Extract symbolic equations from natural language text containing mathematical expressions. Supports polynomials, trigonometric functions, exponential functions, and implicit equations."
 )
 def extract_equations(text: str) -> Dict[str, Any]:
     """
-    Extract symbolic equations from input text.
+    Extract mathematical equations from text.
     
     Args:
         text (str): Input text containing mathematical equations
         
     Returns:
         Dict[str, Any]: Extracted equations with metadata
-        
-    Examples:
-        - "y = x^2 + 3x + 2"
-        - "f(x) = sin(x) + cos(x)"
-        - "x^2 + y^2 = 1"
     """
     try:
         equations = extract_equations_from_text(text)
         return {
-            "success": True,
-            "equations": equations,
-            "count": len(equations),
-            "message": f"Successfully extracted {len(equations)} equation(s)"
+            'success': True,
+            'equations': equations,
+            'count': len(equations),
+            'message': f'Successfully extracted {len(equations)} equation(s)'
         }
     except Exception as e:
         return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to extract equations"
+            'success': False,
+            'error': str(e),
+            'message': 'Failed to extract equations'
         }
 
 
 @mcp.tool(
-    title="Plot Mathematical Equations to Mistral",
-    description="Generate high-quality plots of extracted mathematical equations and upload them to the Mistral Document Library. Returns file information for retrieval and OCR processing."
+    title="Plot Extracted Equations with OCR",
+    description="Plot one or more extracted mathematical equations and process the resulting image with Mistral OCR to extract text and mathematical content from the plot."
 )
-def plot_extracted_equations(equation_ids: List[str],
-                           x_range: List[float] = [-10, 10],
-                           y_range: Optional[List[float]] = None,
-                           resolution: int = 1000,
-                           title: str = "Mathematical Functions") -> Dict[str, Any]:
+def plot_extracted_equations(
+    equation_ids: List[str],
+    x_range: Optional[List[float]] = None,
+    y_range: Optional[List[float]] = None,
+    title: Optional[str] = None
+) -> Dict[str, Any]:
     """
-    Plot extracted equations and upload to Mistral Document Library.
+    Plot extracted equations and process with OCR.
     
     Args:
         equation_ids (List[str]): List of equation IDs to plot
-        x_range (List[float]): X-axis range [min, max]
+        x_range (Optional[List[float]]): X-axis range [min, max]
         y_range (Optional[List[float]]): Y-axis range [min, max]
-        resolution (int): Number of points for plotting
-        title (str): Plot title
+        title (Optional[str]): Plot title
         
     Returns:
-        Dict[str, Any]: Upload result with file information
+        Dict[str, Any]: Plot result with OCR processing results
     """
-    try:
-        x_range_tuple = tuple(x_range)
-        y_range_tuple = tuple(y_range) if y_range else None
-        
-        result = plot_equations_to_mistral(
-            equation_ids=equation_ids,
-            x_range=x_range_tuple,
-            y_range=y_range_tuple,
-            resolution=resolution,
-            title=title
-        )
-        
-        return result
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to plot and upload equations"
-        }
+    return plot_equations_to_ocr(equation_ids, x_range, y_range, title)
 
 
 @mcp.tool(
     title="List Extracted Equations",
-    description="List all currently extracted mathematical equations stored in memory, including their expressions, LaTeX representations, and variable information."
+    description="List all currently extracted mathematical equations with their IDs, expressions, and metadata."
 )
 def list_extracted_equations() -> Dict[str, Any]:
     """
-    List all currently extracted equations.
+    List all extracted equations.
     
     Returns:
         Dict[str, Any]: List of extracted equations
@@ -494,175 +394,18 @@ def list_extracted_equations() -> Dict[str, Any]:
     equations_info = []
     for eq_id, eq_data in extracted_equations.items():
         equations_info.append({
-            "id": eq_id,
-            "expression": eq_data['expression'],
-            "latex": eq_data['latex'],
-            "variables": eq_data['variables']
+            'id': eq_id,
+            'expression': eq_data['expression'],
+            'latex': eq_data['latex'],
+            'variables': eq_data['variables']
         })
     
     return {
-        "success": True,
-        "equations": equations_info,
-        "count": len(equations_info),
-        "message": f"Found {len(equations_info)} extracted equation(s)"
+        'success': True,
+        'equations': equations_info,
+        'count': len(equations_info),
+        'message': f'Found {len(equations_info)} extracted equation(s)'
     }
-
-
-@mcp.tool(
-    title="List Uploaded Files",
-    description="List all files uploaded to the Mistral Document Library, including their file IDs, names, and signed URLs for retrieval."
-)
-def list_uploaded_files() -> Dict[str, Any]:
-    """
-    List all uploaded files in Mistral Document Library.
-    
-    Returns:
-        Dict[str, Any]: List of uploaded files
-    """
-    files_info = []
-    for document_id, file_data in uploaded_files.items():
-        files_info.append({
-            "document_id": document_id,
-            "library_id": file_data.get('library_id', 'unknown'),
-            "filename": file_data.get('filename', 'unknown'),
-            "title": file_data.get('title', 'unknown'),
-            "equation_ids": file_data.get('equation_ids', []),
-            "processing_status": file_data.get('processing_status', 'unknown'),
-            "summary": file_data.get('summary', ''),
-            "uploaded_at": file_data.get('uploaded_at', 'unknown')
-        })
-    
-    return {
-        "success": True,
-        "files": files_info,
-        "count": len(files_info),
-        "message": f"Found {len(files_info)} uploaded file(s)"
-    }
-
-
-@mcp.tool(
-    title="Get Document Information",
-    description="Get detailed information about a specific uploaded document from Mistral Document Library."
-)
-def get_document_info(document_id: str) -> Dict[str, Any]:
-    """
-    Get detailed information for a specific document.
-    
-    Args:
-        document_id (str): The document ID from Mistral Document Library
-        
-    Returns:
-        Dict[str, Any]: Document information
-    """
-    try:
-        if document_id not in uploaded_files:
-            return {
-                "success": False,
-                "error": f"Document {document_id} not found in uploaded files",
-                "message": "Document not found"
-            }
-        
-        try:
-            from mistralai import Mistral
-        except ImportError:
-            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
-        
-        api_key = os.environ.get("MISTRAL_API_KEY")
-        if not api_key:
-            raise ValueError("MISTRAL_API_KEY environment variable not set")
-        
-        client = Mistral(api_key=api_key)
-        file_info = uploaded_files[document_id]
-        library_id = file_info['library_id']
-        
-        # Get document details
-        document = client.beta.libraries.documents.get(
-            library_id=library_id,
-            document_id=document_id
-        )
-        
-        return {
-            "success": True,
-            "document_id": document_id,
-            "library_id": library_id,
-            "filename": document.name,
-            "processing_status": document.processing_status,
-            "summary": document.summary,
-            "size": document.size,
-            "mime_type": document.mime_type,
-            "created_at": document.created_at,
-            "message": "Document information retrieved successfully"
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to get document information"
-        }
-
-
-@mcp.tool(
-    title="Get Library Information",
-    description="Get information about the math equation plots library and its documents."
-)
-def get_library_info() -> Dict[str, Any]:
-    """
-    Get information about the math library and its documents.
-    
-    Returns:
-        Dict[str, Any]: Library information
-    """
-    try:
-        try:
-            from mistralai import Mistral
-        except ImportError:
-            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
-        
-        api_key = os.environ.get("MISTRAL_API_KEY")
-        if not api_key:
-            raise ValueError("MISTRAL_API_KEY environment variable not set")
-        
-        client = Mistral(api_key=api_key)
-        
-        # Get or create library
-        library_id = get_or_create_math_library()
-        
-        # Get library details
-        library = client.beta.libraries.get(library_id=library_id)
-        
-        # Get documents in library
-        documents = client.beta.libraries.documents.list(library_id=library_id)
-        
-        return {
-            "success": True,
-            "library_id": library_id,
-            "library_name": library.name,
-            "library_description": library.description,
-            "total_documents": library.nb_documents,
-            "total_size": library.total_size,
-            "created_at": library.created_at,
-            "updated_at": library.updated_at,
-            "documents": [
-                {
-                    "document_id": doc.id,
-                    "name": doc.name,
-                    "size": doc.size,
-                    "mime_type": doc.mime_type,
-                    "processing_status": doc.processing_status,
-                    "created_at": doc.created_at
-                }
-                for doc in documents.data
-            ],
-            "message": "Library information retrieved successfully"
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to get library information"
-        }
 
 
 @mcp.tool(
@@ -671,42 +414,19 @@ def get_library_info() -> Dict[str, Any]:
 )
 def clear_equations() -> Dict[str, Any]:
     """
-    Clear all extracted equations from memory.
+    Clear all extracted equations.
     
     Returns:
-        Dict[str, Any]: Confirmation message
+        Dict[str, Any]: Clear operation result
     """
     global extracted_equations
     count = len(extracted_equations)
     extracted_equations.clear()
     
     return {
-        "success": True,
-        "message": f"Cleared {count} equation(s) from memory"
+        'success': True,
+        'count': count,
+        'message': f'Cleared {count} equation(s) from memory'
     }
 
 
-@mcp.tool(
-    title="Clear Uploaded Files Cache",
-    description="Clear the local cache of uploaded files information. Note: This does not delete files from Mistral Document Library."
-)
-def clear_uploaded_files_cache() -> Dict[str, Any]:
-    """
-    Clear uploaded files cache from memory.
-    
-    Returns:
-        Dict[str, Any]: Confirmation message
-    """
-    global uploaded_files
-    count = len(uploaded_files)
-    uploaded_files.clear()
-    
-    return {
-        "success": True,
-        "message": f"Cleared {count} uploaded file(s) from cache"
-    }
-
-
-if __name__ == "__main__":
-    # Run the MCP server
-    mcp.run(port=3000, stateless_http=True, debug=True)
