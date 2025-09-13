@@ -190,7 +190,12 @@ def clean_expression(expr_str: str) -> str:
     # Handle implicit multiplication (but avoid function names)
     # Only add * between numbers and variables, not after function names
     expr_str = re.sub(r'(\d)([a-zA-Z_])', r'\1*\2', expr_str)
+    # Avoid adding * after function names like sin, cos, etc.
     expr_str = re.sub(r'([a-zA-Z_]\w*)([a-zA-Z_]\w*)', r'\1*\2', expr_str)
+    # Fix common function parsing issues
+    expr_str = re.sub(r'si\*n', 'sin', expr_str)
+    expr_str = re.sub(r'co\*s', 'cos', expr_str)
+    expr_str = re.sub(r'ta\*n', 'tan', expr_str)
     
     return expr_str
 
@@ -260,6 +265,7 @@ def plot_equations_to_mdl_image(
         elif len(symbols) == 2:
             # Implicit equation (contour plot)
             x_sym, y_sym = symbols[:2]
+            x_vals = np.linspace(x_range[0], x_range[1], resolution)
             y_min, y_max = y_range if y_range else x_range
             y_vals_2d = np.linspace(y_min, y_max, resolution)
             X, Y = np.meshgrid(x_vals, y_vals_2d)
