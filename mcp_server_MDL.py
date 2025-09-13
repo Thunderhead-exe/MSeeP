@@ -272,7 +272,10 @@ def plot_equations_to_mistral(equation_ids: List[str],
     
     try:
         # Upload to Mistral Document Library
-        from mistralai import Mistral
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
         
         # Check for API key
         api_key = os.environ.get("MISTRAL_API_KEY")
@@ -488,7 +491,10 @@ def get_file_signed_url(file_id: str) -> Dict[str, Any]:
                 "message": "File not found"
             }
         
-        from mistralai import Mistral
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
         
         api_key = os.environ.get("MISTRAL_API_KEY")
         if not api_key:
@@ -536,7 +542,10 @@ def process_file_with_ocr(file_id: str, include_image_base64: bool = True) -> Di
                 "message": "File not found"
             }
         
-        from mistralai import Mistral
+        try:
+            from mistralai import Mistral
+        except ImportError:
+            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
         
         api_key = os.environ.get("MISTRAL_API_KEY")
         if not api_key:
@@ -613,8 +622,3 @@ def clear_uploaded_files_cache() -> Dict[str, Any]:
         "success": True,
         "message": f"Cleared {count} uploaded file(s) from cache"
     }
-
-
-if __name__ == "__main__":
-    # Run the MCP server
-    mcp.run(port=3000, stateless_http=True, debug=True)
