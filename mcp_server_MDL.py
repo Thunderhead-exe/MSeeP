@@ -165,9 +165,9 @@ def plot_equations_to_imgbb(equation_ids: List[str],
                            x_range: tuple = (-10, 10), 
                            y_range: Optional[tuple] = None,
                            resolution: int = 1000,
-                           title: str = "Mathematical Functions") -> str:
+                           title: str = "Mathematical Functions") -> Dict[str, Any]:
     """
-    Plot one or more extracted equations, save to temporary file, upload to ImgBB, and return the hosted URL.
+    Plot one or more extracted equations, save to temporary file, upload to ImgBB, and return the complete response.
     
     Args:
         equation_ids (List[str]): List of equation IDs to plot
@@ -177,11 +177,11 @@ def plot_equations_to_imgbb(equation_ids: List[str],
         title (str): Plot title
         
     Returns:
-        str: ImgBB hosted image URL
+        Dict[str, Any]: Complete ImgBB API response with image URLs and metadata
         
     Examples:
         >>> plot_equations_to_imgbb(['eq1'], x_range=(-5, 5))
-        'https://i.ibb.co/abc123/plot.png'  # ImgBB hosted URL
+        {'data': {'url': 'https://i.ibb.co/abc123/plot.png', ...}, 'success': True, ...}
     """
     if not equation_ids:
         raise ValueError("No equation IDs provided")
@@ -271,12 +271,12 @@ def plot_equations_to_imgbb(equation_ids: List[str],
     
     try:
         # Upload to ImgBB
-        imgbb_url = upload_to_imgbb(temp_path)
+        imgbb_response = upload_to_imgbb(temp_path)
         
         # Clean up temporary file
         os.unlink(temp_path)
         
-        return imgbb_url
+        return imgbb_response
         
     except Exception as e:
         # Clean up temporary file on error
@@ -285,15 +285,15 @@ def plot_equations_to_imgbb(equation_ids: List[str],
         raise e
 
 
-def upload_to_imgbb(image_path: str) -> str:
+def upload_to_imgbb(image_path: str) -> Dict[str, Any]:
     """
-    Upload an image file to ImgBB and return the hosted URL.
+    Upload an image file to ImgBB and return the complete response data.
     
     Args:
         image_path (str): Path to the image file to upload
         
     Returns:
-        str: ImgBB hosted image URL
+        Dict[str, Any]: Complete ImgBB API response with image URLs and metadata
         
     Raises:
         ValueError: If API key is not set or upload fails
@@ -326,7 +326,7 @@ def upload_to_imgbb(image_path: str) -> str:
     result = response.json()
     
     if result.get("success"):
-        return result["data"]["url"]
+        return result
     else:
         raise ValueError(f"ImgBB upload failed: {result.get('error', {}).get('message', 'Unknown error')}")
 
@@ -369,7 +369,7 @@ def extract_equations(text: str) -> Dict[str, Any]:
 
 @mcp.tool(
     title="Plot Mathematical Equations and Upload to ImgBB",
-    description="Generate high-quality plots of extracted mathematical equations, upload them to ImgBB, and return the hosted image URL. Supports single and multiple equation plotting with customizable ranges."
+    description="Generate high-quality plots of extracted mathematical equations, upload them to ImgBB, and return the complete ImgBB API response with image URLs and metadata. Supports single and multiple equation plotting with customizable ranges."
 )
 def plot_extracted_equations(equation_ids: List[str],
                            x_range: List[float] = [-10, 10],
@@ -377,7 +377,7 @@ def plot_extracted_equations(equation_ids: List[str],
                            resolution: int = 1000,
                            title: str = "Mathematical Functions") -> Dict[str, Any]:
     """
-    Plot extracted equations, upload to ImgBB, and return the hosted image URL.
+    Plot extracted equations, upload to ImgBB, and return the complete ImgBB API response.
     
     Args:
         equation_ids (List[str]): List of equation IDs to plot
@@ -387,13 +387,13 @@ def plot_extracted_equations(equation_ids: List[str],
         title (str): Plot title
         
     Returns:
-        Dict[str, Any]: Plot result with ImgBB hosted image URL
+        Dict[str, Any]: Complete ImgBB API response with image URLs and metadata
     """
     try:
         x_range_tuple = tuple(x_range)
         y_range_tuple = tuple(y_range) if y_range else None
         
-        imgbb_url = plot_equations_to_imgbb(
+        imgbb_response = plot_equations_to_imgbb(
             equation_ids=equation_ids,
             x_range=x_range_tuple,
             y_range=y_range_tuple,
@@ -401,15 +401,17 @@ def plot_extracted_equations(equation_ids: List[str],
             title=title
         )
         
-        return {
-            "success": True,
-            "image_url": imgbb_url,
+        # Add our custom metadata to the ImgBB response
+        imgbb_response["plot_metadata"] = {
             "equation_ids": equation_ids,
             "x_range": x_range,
             "y_range": y_range,
             "title": title,
             "message": f"Successfully plotted {len(equation_ids)} equation(s) and uploaded to ImgBB"
         }
+        
+        return imgbb_response
+        
     except Exception as e:
         return {
             "success": False,
