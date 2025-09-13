@@ -16,18 +16,13 @@ import sympy as sp
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
-
-from mcp.server.fastmcp import FastMCP
-from pydantic import Field
-
-import mcp.types as types
+from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Math Equation Plotter", port=3000, stateless_http=True, debug=True)
+mcp = FastMCP("Math Equation Plotter")
 
-
-# Global storage for extracted equations
-extracted_equations: Dict[str, sp.Expr] = {}
+# Global storage for extracted equations (storing string expressions and SymPy objects)
+extracted_equations: Dict[str, Dict[str, Any]] = {}
 
 
 def extract_equations_from_text(text: str) -> List[Dict[str, Any]]:
@@ -93,14 +88,18 @@ def extract_equations_from_text(text: str) -> List[Dict[str, Any]]:
                         'id': equation_id,
                         'name': var_name,
                         'expression': str(expr),
-                        'sympy_expr': expr,
                         'dependent_var': dep_var,
                         'type': 'function' if dep_var else 'explicit',
                         'original_text': match.group(0)
                     })
                     
-                    # Store in global dictionary
-                    extracted_equations[equation_id] = expr
+                    # Store in global dictionary (both string and SymPy object)
+                    extracted_equations[equation_id] = {
+                        'expression': str(expr),
+                        'sympy_expr': expr,
+                        'latex': sp.latex(expr),
+                        'variables': [str(sym) for sym in expr.free_symbols]
+                    }
                     
                 except Exception as e:
                     print(f"Warning: Could not parse expression '{expr_str}': {e}")
@@ -202,7 +201,7 @@ def plot_equations_to_base64(equation_ids: List[str],
     colors = plt.cm.tab10(np.linspace(0, 1, len(equation_ids)))
     
     for i, eq_id in enumerate(equation_ids):
-        expr = extracted_equations[eq_id]
+        expr = extracted_equations[eq_id]['sympy_expr']
         
         try:
             # Convert to numerical function
@@ -371,12 +370,12 @@ def list_extracted_equations() -> Dict[str, Any]:
         Dict[str, Any]: List of extracted equations
     """
     equations_info = []
-    for eq_id, expr in extracted_equations.items():
+    for eq_id, eq_data in extracted_equations.items():
         equations_info.append({
             "id": eq_id,
-            "expression": str(expr),
-            "latex": sp.latex(expr),
-            "variables": [str(sym) for sym in expr.free_symbols]
+            "expression": eq_data['expression'],
+            "latex": eq_data['latex'],
+            "variables": eq_data['variables']
         })
     
     return {
@@ -406,7 +405,3 @@ def clear_equations() -> Dict[str, Any]:
         "success": True,
         "message": f"Cleared {count} equation(s) from memory"
     }
-
-
-if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
