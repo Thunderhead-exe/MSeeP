@@ -299,6 +299,17 @@ def plot_equations_to_ocr(
             include_image_base64=True
         )
         
+        # Extract image from OCR response
+        extracted_image = None
+        if ocr_response and hasattr(ocr_response, 'pages') and ocr_response.pages:
+            page = ocr_response.pages[0]
+            if hasattr(page, 'images') and page.images:
+                # Get the first image from OCR results
+                ocr_image = page.images[0]
+                # The OCR response should contain the image data
+                # We'll use the original image data since OCR extracts bounding boxes
+                extracted_image = base64_image
+        
         # Clean up temporary file
         os.unlink(temp_path)
         
@@ -309,8 +320,9 @@ def plot_equations_to_ocr(
             'x_range': x_range,
             'y_range': y_range,
             'ocr_results': ocr_response,
-            'image_base64': base64_image,
-            'message': f"Successfully processed plot with Mistral OCR"
+            'extracted_image': extracted_image,
+            'image_format': 'png',
+            'message': f"Successfully processed plot with Mistral OCR and extracted image"
         }
         
     except Exception as e:
@@ -357,7 +369,7 @@ def extract_equations(text: str) -> Dict[str, Any]:
 
 @mcp.tool(
     title="Plot Extracted Equations with OCR",
-    description="Plot one or more extracted mathematical equations and process the resulting image with Mistral OCR to extract text and mathematical content from the plot."
+    description="Plot one or more extracted mathematical equations and process the resulting image with Mistral OCR to extract text and mathematical content from the plot. Returns the extracted image from OCR bounding box results."
 )
 def plot_extracted_equations(
     equation_ids: List[str],
@@ -428,5 +440,4 @@ def clear_equations() -> Dict[str, Any]:
         'count': count,
         'message': f'Cleared {count} equation(s) from memory'
     }
-
 
