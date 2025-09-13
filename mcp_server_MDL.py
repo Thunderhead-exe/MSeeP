@@ -1,5 +1,5 @@
 """
-Model Context Protocol (MCP) Server for Mathematical Equation Plotting - MDL Image Version
+Model Context Protocol (MCP) Server for Mathematical Equation Plotting - MDL IMG 2 Version
 
 This server provides tools for extracting symbolic equations from text
 and plotting them using the Mistral Document Library for image storage and retrieval.
@@ -22,7 +22,7 @@ import numpy as np
 from fastmcp import FastMCP
 
 # Initialize FastMCP server
-mcp = FastMCP("Math Equation Plotter MDL IMG")
+mcp = FastMCP("Math Equation Plotter MDL IMG 2")
 
 # Global storage for extracted equations (storing string expressions and SymPy objects)
 extracted_equations: Dict[str, Dict[str, Any]] = {}
@@ -54,9 +54,9 @@ def get_or_create_mseep_library() -> str:
         
         client = Mistral(api_key=api_key)
         
-        # Try to find existing MSeeP_Plots library
-        libraries = client.beta.libraries.list()
-        for library in libraries.data:
+        # List libraries to check if MSeeP_Plots exists
+        libraries = client.beta.libraries.list().data
+        for library in libraries:
             if library.name == "MSeeP_Plots":
                 mseep_library_id = library.id
                 return mseep_library_id
@@ -200,7 +200,7 @@ def clean_expression(expr_str: str) -> str:
     return expr_str
 
 
-def plot_equations_to_mdl_image(
+def plot_equations_to_mdl_library(
     equation_ids: List[str],
     x_range: Optional[List[float]] = None,
     y_range: Optional[List[float]] = None,
@@ -208,7 +208,7 @@ def plot_equations_to_mdl_image(
     resolution: int = 1000
 ) -> Dict[str, Any]:
     """
-    Plot extracted equations and upload to Mistral Document Library, then retrieve the image.
+    Plot extracted equations, save to temporary PNG file, upload to Mistral Document Library, and retrieve the image.
     
     Args:
         equation_ids (List[str]): List of equation IDs to plot
@@ -291,21 +291,19 @@ def plot_equations_to_mdl_image(
     # Adjust layout
     plt.tight_layout()
     
-    # Save to temporary file
+    # Create temporary PNG file
     temp_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
     temp_path = temp_file.name
     temp_file.close()
     
+    # Save plot to temporary file
     plt.savefig(temp_path, dpi=300, bbox_inches='tight')
     plt.close()
     
     try:
-        # Upload to Mistral Document Library
-        try:
-            from mistralai import Mistral
-            from mistralai.models import File
-        except ImportError:
-            raise ImportError("mistralai package not installed. Install with: pip install mistralai")
+        # Initialize Mistral client
+        from mistralai import Mistral
+        from mistralai.models import File
         
         api_key = os.environ.get("MISTRAL_API_KEY")
         if not api_key:
@@ -326,27 +324,26 @@ def plot_equations_to_mdl_image(
                 file=File(fileName=filename, content=file_content)
             )
         
-        # Wait for processing to complete
-        import time
+        # Check status and wait for processing to finish
         status = client.beta.libraries.documents.status(
             library_id=library_id, 
             document_id=uploaded_doc.id
         )
         
+        import time
         while status.processing_status == "Running":
-            time.sleep(1)
             status = client.beta.libraries.documents.status(
                 library_id=library_id, 
                 document_id=uploaded_doc.id
             )
+            time.sleep(1)
         
-        # Get final document info
+        # Get document info once processed
         final_doc = client.beta.libraries.documents.get(
             library_id=library_id, 
             document_id=uploaded_doc.id
         )
         
-        # Now retrieve the image from the library
         # Read the temporary file and convert to base64
         with open(temp_path, "rb") as image_file:
             image_data = image_file.read()
@@ -427,8 +424,8 @@ def extract_equations(text: str) -> Dict[str, Any]:
 
 
 @mcp.tool(
-    title="Plot Extracted Equations to MDL Image",
-    description="Plot one or more extracted mathematical equations and upload to Mistral Document Library, then retrieve the image data. Returns base64 encoded image data from the library."
+    title="Plot Extracted Equations to MDL Library",
+    description="Plot one or more extracted mathematical equations, save as temporary PNG file, upload to MSeeP_Plots library, and retrieve the image data. Returns base64 encoded image data from the library."
 )
 def plot_extracted_equations(
     equation_ids: List[str],
@@ -448,7 +445,7 @@ def plot_extracted_equations(
     Returns:
         Dict[str, Any]: Plot result with image data from library
     """
-    return plot_equations_to_mdl_image(equation_ids, x_range, y_range, title)
+    return plot_equations_to_mdl_library(equation_ids, x_range, y_range, title)
 
 
 @mcp.tool(
@@ -602,7 +599,7 @@ def get_library_info() -> Dict[str, Any]:
         # Get library details
         library = client.beta.libraries.get(library_id=library_id)
         
-        # Get documents in library
+        # List documents in library
         documents = client.beta.libraries.documents.list(library_id=library_id)
         
         return {
