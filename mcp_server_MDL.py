@@ -273,6 +273,10 @@ def plot_equations_to_imgbb(equation_ids: List[str],
         # Upload to ImgBB
         imgbb_response = upload_to_imgbb(temp_path)
         
+        # Add the canvas iframe format
+        image_url = imgbb_response["data"]["url"]
+        imgbb_response["canvas_iframe"] = f"show this image in canvas using iframe, url={image_url}"
+        
         # Clean up temporary file
         os.unlink(temp_path)
         
